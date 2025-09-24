@@ -4,6 +4,21 @@
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
   <MAINGROUP id="OOrzYU" name="OneKnob">
     <GROUP id="{9C592D6B-6928-5E77-0B40-516F765E1044}" name="Source">
+      <GROUP id="{20010CC7-0DD5-CB79-A160-2CC43D1CADF3}" name="lookandfeel">
+        <FILE id="TMImKs" name="ColorPalette.cpp" compile="1" resource="0"
+              file="Source/lookandfeel/ColorPalette.cpp"/>
+        <FILE id="d45Epr" name="ColorPalette.h" compile="0" resource="0" file="Source/lookandfeel/ColorPalette.h"/>
+        <FILE id="HFMVGq" name="Fonts.cpp" compile="1" resource="0" file="Source/lookandfeel/Fonts.cpp"/>
+        <FILE id="tBcxTj" name="Fonts.h" compile="0" resource="0" file="Source/lookandfeel/Fonts.h"/>
+        <FILE id="Bw75E2" name="OneKnobComponent.cpp" compile="1" resource="0"
+              file="Source/lookandfeel/OneKnobComponent.cpp"/>
+        <FILE id="S41Oc8" name="OneKnobComponent.h" compile="0" resource="0"
+              file="Source/lookandfeel/OneKnobComponent.h"/>
+        <FILE id="MeLGgS" name="OneKnobLookAndFeel.cpp" compile="1" resource="0"
+              file="Source/lookandfeel/OneKnobLookAndFeel.cpp"/>
+        <FILE id="pXMLgn" name="OneKnobLookAndFeel.h" compile="0" resource="0"
+              file="Source/lookandfeel/OneKnobLookAndFeel.h"/>
+      </GROUP>
       <FILE id="kCfs07" name="PluginProcessor.cpp" compile="1" resource="0"
             file="Source/PluginProcessor.cpp"/>
       <FILE id="FVB3pR" name="PluginProcessor.h" compile="0" resource="0"

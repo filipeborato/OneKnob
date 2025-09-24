@@ -10,43 +10,41 @@
 
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
-
-// Forward declaration for RotarySliderLookAndFeel
-class RotarySliderLookAndFeel;
+#include "lookandfeel/OneKnobLookAndFeel.h"
+#include "lookandfeel/OneKnobComponent.h"
+#include "lookandfeel/ColorPalette.h"
 
 //==============================================================================
 /**
+    Main plugin editor that handles layout and wooden frame background.
+    All look and feel logic is now centralized in OneKnobLookAndFeel.
 */
-class OneKnobAudioProcessorEditor  : public juce::AudioProcessorEditor
+class OneKnobAudioProcessorEditor : public juce::AudioProcessorEditor
 {
 public:
-    OneKnobAudioProcessorEditor (OneKnobAudioProcessor&);
+    OneKnobAudioProcessorEditor(OneKnobAudioProcessor&);
     ~OneKnobAudioProcessorEditor() override;
 
     //==============================================================================
-    void paint (juce::Graphics&) override;
+    void paint(juce::Graphics&) override;
     void resized() override;
 
 private:
-    // This reference is provided as a quick way for your editor to
-    // access the processor object that created it.
+    // Reference to the processor
     OneKnobAudioProcessor& audioProcessor;
     
-    // Custom rotary slider
-    juce::Slider knobSlider;
+    // Custom look and feel (centralized styling)
+    std::unique_ptr<OneKnobLookAndFeel> oneKnobLookAndFeel;
     
-    // Custom look and feel
-    std::unique_ptr<RotarySliderLookAndFeel> rotaryLookAndFeel;
+    // Main gain knob component
+    std::unique_ptr<OneKnobComponent> gainKnobComponent;
     
-    // Parameter attachment
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> gainAttachment;
-    
-    // Wooden frame drawing methods
+    // Wooden frame drawing methods (background only)
     void drawWoodenFrame(juce::Graphics& g);
     void drawWoodGrain(juce::Graphics& g, juce::Rectangle<int> area);
     void drawFrameBorder(juce::Graphics& g, juce::Rectangle<int> area, int thickness);
     void drawInnerPanel(juce::Graphics& g, juce::Rectangle<int> area);
     void drawTitle(juce::Graphics& g, juce::Rectangle<int> area, int frameThickness);
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OneKnobAudioProcessorEditor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OneKnobAudioProcessorEditor)
 };
