@@ -16,25 +16,25 @@ OneKnobComponent::OneKnobComponent(const juce::String& parameterID,
                                  juce::AudioProcessorValueTreeState& valueTreeState,
                                  const juce::String& labelText)
 {
-    // Configure the slider
+    // Configure the slider â€” range/step matches the AVTS parameter (0..1, fine resolution).
     knobSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     knobSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    knobSlider.setRange(0.0, 1.0, 0.01);
-    knobSlider.setValue(0.5, juce::dontSendNotification);
-    
-    // Set default rotation parameters (210° to 300° = 90° range)
-    setRotaryParameters(juce::degreesToRadians(210.0f), juce::degreesToRadians(300.0f), true);
-    
-    // Create parameter attachment
+    knobSlider.setRange(0.0, 1.0, 0.001);
+    knobSlider.setDoubleClickReturnValue(true, 0.25);
+
+    // 270-degree arc, 7-o'clock to 5-o'clock â€” natural for a single rotary.
+    setRotaryParameters(juce::degreesToRadians(225.0f), juce::degreesToRadians(495.0f), true);
+
+    // Create parameter attachment (this overrides the slider's initial value with the AVTS one).
     sliderAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         valueTreeState, parameterID, knobSlider);
-    
-    // Configure the label
+
+    // Configure the label â€” small, dim, letter-tracked uppercase.
     knobLabel.setText(labelText, juce::dontSendNotification);
     knobLabel.setJustificationType(juce::Justification::centred);
-    knobLabel.setColour(juce::Label::textColourId, OneKnobColors::getTitleColor());
+    knobLabel.setColour(juce::Label::textColourId, OneKnobColors::getTextSecondary());
     knobLabel.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-    knobLabel.setFont(OneKnobFonts::getBodyFont());
+    knobLabel.setFont(OneKnobFonts::getCustomFont(13.0f, true));
     
     // Add components
     addAndMakeVisible(knobSlider);

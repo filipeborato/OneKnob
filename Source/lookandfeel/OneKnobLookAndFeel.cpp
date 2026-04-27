@@ -9,7 +9,7 @@
 */
 
 #include "OneKnobLookAndFeel.h"
-#include "../../JuceLibraryCode/BinaryData.h"
+#include "BinaryData.h"
 
 OneKnobLookAndFeel::OneKnobLookAndFeel()
 {
