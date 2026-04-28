@@ -19,17 +19,27 @@ namespace oneknob
         {
             sampleRate = static_cast<float> (spec.sampleRate);
 
-            // Base delay (1 ms) + worst-case modulation depth + interpolation slack.
+            // Reserve enough delay for: base + max wow + max flutter (incl. jitter)
+            // + safety. Hard caps are enforced in setDepths(); this just guarantees
+            // we never overrun the buffer if AmountMapper limits ever change.
+            const float headRoomMs = baseDelayMs
+                                   + maxWowDepthMs
+                                   + maxFlutterDepthMs * (1.0f + jitterRelDepth)
+                                   + 1.0f;  // safety
             const auto maxDelaySamples =
-                static_cast<int> (std::ceil (0.005f * sampleRate)) + 8;
+                static_cast<int> (std::ceil (headRoomMs * 0.001f * sampleRate)) + 16;
 
             delay.reset();
             delay.setMaximumDelayInSamples (maxDelaySamples);
             delay.prepare (spec);
 
-            baseDelaySamples = 0.001f * sampleRate;          // 1 ms
+            baseDelaySamples = baseDelayMs * 0.001f * sampleRate;
             wowPhaseInc      = juce::MathConstants<float>::twoPi * 0.7f / sampleRate;
             flutterPhaseInc  = juce::MathConstants<float>::twoPi * 7.0f / sampleRate;
+
+            // Sample-rate-invariant 1-pole LPF for the jitter source.
+            jitterCoef = std::exp (-2.0f * juce::MathConstants<float>::pi
+                                   * jitterCutoffHz / sampleRate);
 
             reset();
         }
@@ -43,8 +53,13 @@ namespace oneknob
 
         void setDepths (float wowMs, float flutterMs) noexcept
         {
-            wowDepthSamples     = juce::jmax (0.0f, wowMs)     * 0.001f * sampleRate;
-            flutterDepthSamples = juce::jmax (0.0f, flutterMs) * 0.001f * sampleRate;
+            // Clamp to the per-stage ceilings used to size the delay buffer in
+            // prepare(). Defensive: keeps us safe if AmountMapper ever changes.
+            wowMs     = juce::jlimit (0.0f, maxWowDepthMs,     wowMs);
+            flutterMs = juce::jlimit (0.0f, maxFlutterDepthMs, flutterMs);
+
+            wowDepthSamples     = wowMs     * 0.001f * sampleRate;
+            flutterDepthSamples = flutterMs * 0.001f * sampleRate;
         }
 
         template <typename Ctx>
@@ -61,12 +76,14 @@ namespace oneknob
                 if (wowPhase     > juce::MathConstants<float>::twoPi) wowPhase     -= juce::MathConstants<float>::twoPi;
                 if (flutterPhase > juce::MathConstants<float>::twoPi) flutterPhase -= juce::MathConstants<float>::twoPi;
 
-                // Smoothed white noise → pseudo-jitter. Cheap 1-pole LPF on rng.
+                // Smoothed white noise → pseudo-jitter. 1-pole LPF coefficient
+                // is computed from a fixed cutoff so the character stays the
+                // same at 44.1, 48, 96 kHz, etc.
                 const float rawNoise = noise.nextFloat() * 2.0f - 1.0f;
-                jitterState = 0.92f * jitterState + 0.08f * rawNoise;
+                jitterState = jitterCoef * jitterState + (1.0f - jitterCoef) * rawNoise;
 
                 const float wowMod     = std::sin (wowPhase) * wowDepthSamples;
-                const float flutterMod = (std::sin (flutterPhase) + 0.10f * jitterState)
+                const float flutterMod = (std::sin (flutterPhase) + jitterRelDepth * jitterState)
                                           * flutterDepthSamples;
 
                 const float delaySamples = juce::jmax (0.0f,
@@ -83,6 +100,14 @@ namespace oneknob
         }
 
     private:
+        // Hard ceilings — guarantee delay reservation never overruns regardless
+        // of what AmountMapper produces. baseDelay + maxWow + maxFlutter*(1+jit) ≈ 9 ms.
+        static constexpr float baseDelayMs       = 1.0f;
+        static constexpr float maxWowDepthMs     = 4.0f;
+        static constexpr float maxFlutterDepthMs = 4.0f;
+        static constexpr float jitterRelDepth    = 0.10f;
+        static constexpr float jitterCutoffHz    = 500.0f;
+
         juce::dsp::DelayLine<float, juce::dsp::DelayLineInterpolationTypes::Lagrange3rd> delay;
         juce::Random noise;
 
@@ -96,5 +121,6 @@ namespace oneknob
         float wowPhaseInc     = 0.0f;
         float flutterPhaseInc = 0.0f;
         float jitterState = 0.0f;
+        float jitterCoef  = 0.0f;
     };
 }

@@ -38,7 +38,7 @@ const juce::String OneKnobAudioProcessor::getName() const          { return Juce
 bool   OneKnobAudioProcessor::acceptsMidi() const                  { return false; }
 bool   OneKnobAudioProcessor::producesMidi() const                 { return false; }
 bool   OneKnobAudioProcessor::isMidiEffect() const                 { return false; }
-double OneKnobAudioProcessor::getTailLengthSeconds() const         { return 0.0; }
+double OneKnobAudioProcessor::getTailLengthSeconds() const         { return 0.05; }
 
 int    OneKnobAudioProcessor::getNumPrograms()                     { return 1; }
 int    OneKnobAudioProcessor::getCurrentProgram()                  { return 0; }
