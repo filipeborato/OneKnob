@@ -1,119 +1,70 @@
-/*
-  ==============================================================================
-
-    This file contains the basic framework code for a JUCE plugin processor.
-
-  ==============================================================================
-*/
-
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-//==============================================================================
 OneKnobAudioProcessor::OneKnobAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
-     : AudioProcessor (BusesProperties()
-                     #if ! JucePlugin_IsMidiEffect
-                      #if ! JucePlugin_IsSynth
-                       .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                      #endif
-                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
-                     #endif
-                       ), valueTreeState(*this, nullptr, "Parameters", createParameterLayout())
+    : AudioProcessor (BusesProperties()
+                       #if ! JucePlugin_IsMidiEffect
+                        #if ! JucePlugin_IsSynth
+                         .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
+                        #endif
+                         .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                       #endif
+                     ),
+      valueTreeState (*this, nullptr, "Parameters", createParameterLayout())
 #endif
 {
+    amountParam = valueTreeState.getRawParameterValue (kAmountParamID);
+    jassert (amountParam != nullptr);
 }
 
-OneKnobAudioProcessor::~OneKnobAudioProcessor()
-{
-}
+OneKnobAudioProcessor::~OneKnobAudioProcessor() = default;
 
-juce::AudioProcessorValueTreeState::ParameterLayout OneKnobAudioProcessor::createParameterLayout()
+juce::AudioProcessorValueTreeState::ParameterLayout
+OneKnobAudioProcessor::createParameterLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
-    
-    layout.add(std::make_unique<juce::AudioParameterFloat>(
-        "gain",                     // parameter ID
-        "Gain",                     // parameter name
-        juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), // range
-        0.5f));                     // default value
-    
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { kAmountParamID, 1 },
+        "Amount",
+        juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
+        0.25f));
+
     return layout;
 }
 
-//==============================================================================
-const juce::String OneKnobAudioProcessor::getName() const
-{
-    return JucePlugin_Name;
-}
+const juce::String OneKnobAudioProcessor::getName() const          { return JucePlugin_Name; }
+bool   OneKnobAudioProcessor::acceptsMidi() const                  { return false; }
+bool   OneKnobAudioProcessor::producesMidi() const                 { return false; }
+bool   OneKnobAudioProcessor::isMidiEffect() const                 { return false; }
+double OneKnobAudioProcessor::getTailLengthSeconds() const         { return 0.05; }
 
-bool OneKnobAudioProcessor::acceptsMidi() const
-{
-   #if JucePlugin_WantsMidiInput
-    return true;
-   #else
-    return false;
-   #endif
-}
+int    OneKnobAudioProcessor::getNumPrograms()                     { return 1; }
+int    OneKnobAudioProcessor::getCurrentProgram()                  { return 0; }
+void   OneKnobAudioProcessor::setCurrentProgram (int)              {}
+const  juce::String OneKnobAudioProcessor::getProgramName (int)    { return {}; }
+void   OneKnobAudioProcessor::changeProgramName (int, const juce::String&) {}
 
-bool OneKnobAudioProcessor::producesMidi() const
-{
-   #if JucePlugin_ProducesMidiOutput
-    return true;
-   #else
-    return false;
-   #endif
-}
-
-bool OneKnobAudioProcessor::isMidiEffect() const
-{
-   #if JucePlugin_IsMidiEffect
-    return true;
-   #else
-    return false;
-   #endif
-}
-
-double OneKnobAudioProcessor::getTailLengthSeconds() const
-{
-    return 0.0;
-}
-
-int OneKnobAudioProcessor::getNumPrograms()
-{
-    return 1;   // NB: some hosts don't cope very well if you tell them there are 0 programs,
-                // so this should be at least 1, even if you're not really implementing programs.
-}
-
-int OneKnobAudioProcessor::getCurrentProgram()
-{
-    return 0;
-}
-
-void OneKnobAudioProcessor::setCurrentProgram (int index)
-{
-}
-
-const juce::String OneKnobAudioProcessor::getProgramName (int index)
-{
-    return {};
-}
-
-void OneKnobAudioProcessor::changeProgramName (int index, const juce::String& newName)
-{
-}
-
-//==============================================================================
 void OneKnobAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
-    // Use this method as the place to do any pre-playbook
-    // initialisation that you need..
+    juce::dsp::ProcessSpec spec {
+        sampleRate,
+        static_cast<juce::uint32> (samplesPerBlock),
+        static_cast<juce::uint32> (juce::jmax (1, getTotalNumOutputChannels()))
+    };
+
+    tapeProcessor.prepare (spec);
+
+    smoothedAmount.reset (sampleRate, 0.030);                    // 30 ms ramp
+    smoothedAmount.setCurrentAndTargetValue (amountParam->load());
+
+    setLatencySamples (tapeProcessor.getLatencySamples());
 }
 
 void OneKnobAudioProcessor::releaseResources()
 {
-    // When playback stops, you can use this as an opportunity to free up any
-    // spare memory, etc.
+    tapeProcessor.reset();
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -123,17 +74,13 @@ bool OneKnobAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) 
     juce::ignoreUnused (layouts);
     return true;
   #else
-    // This is the place where you check if the layout is supported.
-    // In this template code we only support mono or stereo.
-    // Some plugin hosts, such as certain GarageBand versions, will only
-    // load plugins that support stereo bus layouts.
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
-     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+    const auto& mainOut = layouts.getMainOutputChannelSet();
+    if (mainOut != juce::AudioChannelSet::mono()
+     && mainOut != juce::AudioChannelSet::stereo())
         return false;
 
-    // This checks if the input layout matches the output layout
    #if ! JucePlugin_IsSynth
-    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
+    if (mainOut != layouts.getMainInputChannelSet())
         return false;
    #endif
 
@@ -142,69 +89,48 @@ bool OneKnobAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) 
 }
 #endif
 
-void OneKnobAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
+void OneKnobAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
+                                          juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels  = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    // In case we have more outputs than inputs, this code clears any output
-    // channels that didn't contain input data, (because these aren't
-    // guaranteed to be empty - they may contain garbage).
-    // This is here to avoid people getting screaming feedback
-    // when they first compile a plugin, but obviously you don't need to keep
-    // this code if your algorithm always overwrites all the output channels.
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
+    const auto totalIn  = getTotalNumInputChannels();
+    const auto totalOut = getTotalNumOutputChannels();
 
-    // Get the gain parameter value
-    auto* gainParam = valueTreeState.getRawParameterValue("gain");
-    float gainValue = gainParam ? gainParam->load() : 0.5f;
-    
-    // Apply gain to all channels
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
-    {
-        auto* channelData = buffer.getWritePointer (channel);
-        
-        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
-        {
-            channelData[sample] *= gainValue;
-        }
-    }
+    for (auto ch = totalIn; ch < totalOut; ++ch)
+        buffer.clear (ch, 0, buffer.getNumSamples());
+
+    smoothedAmount.setTargetValue (amountParam->load());
+    const float currentAmount = smoothedAmount.getCurrentValue();
+
+    juce::dsp::AudioBlock<float> block (buffer);
+    juce::dsp::ProcessContextReplacing<float> ctx (block);
+    tapeProcessor.process (ctx, currentAmount);
+
+    smoothedAmount.skip (buffer.getNumSamples());
 }
 
-//==============================================================================
-bool OneKnobAudioProcessor::hasEditor() const
-{
-    return true; // (change this to false if you choose to not supply an editor)
-}
+bool OneKnobAudioProcessor::hasEditor() const { return true; }
 
 juce::AudioProcessorEditor* OneKnobAudioProcessor::createEditor()
 {
     return new OneKnobAudioProcessorEditor (*this);
 }
 
-//==============================================================================
 void OneKnobAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // Store the current state
     auto state = valueTreeState.copyState();
-    std::unique_ptr<juce::XmlElement> xml (state.createXml());
-    copyXmlToBinary (*xml, destData);
+    if (auto xml = state.createXml())
+        copyXmlToBinary (*xml, destData);
 }
 
 void OneKnobAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    // Restore the state
-    std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
-    
-    if (xmlState.get() != nullptr)
-        if (xmlState->hasTagName (valueTreeState.state.getType()))
-            valueTreeState.replaceState (juce::ValueTree::fromXml (*xmlState));
+    if (auto xml = getXmlFromBinary (data, sizeInBytes))
+        if (xml->hasTagName (valueTreeState.state.getType()))
+            valueTreeState.replaceState (juce::ValueTree::fromXml (*xml));
 }
 
-//==============================================================================
-// This creates new instances of the plugin..
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new OneKnobAudioProcessor();

@@ -1,195 +1,127 @@
-/*
-  ==============================================================================
-
-    This file contains the basic framework code for a JUCE plugin editor.
-
-  ==============================================================================
-*/
-
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "lookandfeel/ColorPalette.h"
 #include "lookandfeel/Fonts.h"
 
-//==============================================================================
-// OneKnobAudioProcessorEditor Implementation
-//==============================================================================
-
-OneKnobAudioProcessorEditor::OneKnobAudioProcessorEditor(OneKnobAudioProcessor& p)
-    : AudioProcessorEditor(&p), audioProcessor(p)
+namespace
 {
-    // Create the centralized look and feel
+    constexpr int kEditorWidth   = 460;
+    constexpr int kEditorHeight  = 360;
+    constexpr int kKnobSize      = 200;
+    constexpr int kTitleHeight   = 28;
+    constexpr int kValueHeight   = 22;
+
+    constexpr float kHaloMaxAlpha = 0.55f;
+}
+
+OneKnobAudioProcessorEditor::OneKnobAudioProcessorEditor (OneKnobAudioProcessor& p)
+    : AudioProcessorEditor (&p), audioProcessor (p)
+{
     oneKnobLookAndFeel = std::make_unique<OneKnobLookAndFeel>();
-    
-    // Set the look and feel globally for this editor
-    setLookAndFeel(oneKnobLookAndFeel.get());
-    
-    // Create the main gain knob component with "gain" parameter
-    gainKnobComponent = std::make_unique<OneKnobComponent>(
-        "gain", 
+    setLookAndFeel (oneKnobLookAndFeel.get());
+
+    knobComponent = std::make_unique<OneKnobComponent> (
+        OneKnobAudioProcessor::kAmountParamID,
         audioProcessor.getValueTreeState(),
-        "GAIN"
-    );
-    
-    // Add the knob component to the editor
-    addAndMakeVisible(*gainKnobComponent);
-    
-    // Set window size (increased by 30% from original 400x300)
-    setSize(520, 390);
+        "TAPE");
+    addAndMakeVisible (*knobComponent);
+
+    valueLabel.setText ("0 %", juce::dontSendNotification);
+    valueLabel.setJustificationType (juce::Justification::centred);
+    valueLabel.setColour (juce::Label::textColourId, OneKnobColors::getTextSecondary());
+    valueLabel.setFont (OneKnobFonts::getCustomFont (12.0f, false));
+    addAndMakeVisible (valueLabel);
+
+    setSize (kEditorWidth, kEditorHeight);
+
+    currentAmount = static_cast<float> (knobComponent->getSlider().getValue());
+    startTimerHz (30);
 }
 
 OneKnobAudioProcessorEditor::~OneKnobAudioProcessorEditor()
 {
-    // Reset look and feel to avoid dangling pointer
-    setLookAndFeel(nullptr);
+    stopTimer();
+    setLookAndFeel (nullptr);
 }
 
-//==============================================================================
-void OneKnobAudioProcessorEditor::paint(juce::Graphics& g)
+void OneKnobAudioProcessorEditor::timerCallback()
 {
-    // Only handle the wooden frame background - knob drawing is handled by OneKnobLookAndFeel
-    drawWoodenFrame(g);
+    const float v = static_cast<float> (knobComponent->getSlider().getValue());
+    if (std::abs (v - currentAmount) > 1.0e-4f)
+    {
+        currentAmount = v;
+        valueLabel.setText (juce::String (juce::roundToInt (v * 100.0f)) + " %",
+                            juce::dontSendNotification);
+        repaint();
+    }
 }
 
-void OneKnobAudioProcessorEditor::drawWoodenFrame(juce::Graphics& g)
+void OneKnobAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    auto bounds = getLocalBounds();
-    
-    // Define frame thickness - increased by 30% (from 25 to 33)
-    const int frameThickness = 33;
-    
-    // Fill the entire background with dark wood
-    g.setColour(OneKnobColors::getDarkWood());
+    const auto bounds = getLocalBounds().toFloat();
+
+    // 1) Background — vertical gradient charcoal.
+    juce::ColourGradient bg (
+        OneKnobColors::getBackgroundTop(),    bounds.getCentreX(), bounds.getY(),
+        OneKnobColors::getBackgroundBottom(), bounds.getCentreX(), bounds.getBottom(),
+        false);
+    g.setGradientFill (bg);
     g.fillAll();
-    
-    // Create wood grain pattern using gradients
-    drawWoodGrain(g, bounds);
-    
-    // Draw the outer frame border
-    drawFrameBorder(g, bounds, frameThickness);
-    
-    // Inner panel area (where the knob sits)
-    auto innerArea = bounds.reduced(frameThickness);
-    drawInnerPanel(g, innerArea);
-    
-    // Draw title on the wooden frame
-    drawTitle(g, bounds, frameThickness);
-}
 
-void OneKnobAudioProcessorEditor::drawWoodGrain(juce::Graphics& g, juce::Rectangle<int> area)
-{
-    // Create vertical wood grain lines using color palette
-    auto grainColor1 = OneKnobColors::getColor(OneKnobColors::ColorRole::WoodGrainDark);
-    auto grainColor2 = OneKnobColors::getColor(OneKnobColors::ColorRole::WoodGrainLight);
-    
-    for (int i = 0; i < area.getWidth(); i += 10) // Increased spacing
+    // 2) Vignette — radial darkening at the corners.
     {
-        // Vertical grain lines with slight variation
-        float alpha = 0.3f + (std::sin(static_cast<float>(i) * 0.1f) * 0.2f);
-        g.setColour(grainColor1.withAlpha(alpha));
-        g.drawVerticalLine(area.getX() + i, static_cast<float>(area.getY()), static_cast<float>(area.getBottom()));
-        
-        if (i % 21 == 0) // Increased spacing
-        {
-            g.setColour(grainColor2.withAlpha(alpha * 0.5f));
-            g.drawVerticalLine(area.getX() + i + 1, static_cast<float>(area.getY()), static_cast<float>(area.getBottom()));
-        }
+        const float cx = bounds.getCentreX();
+        const float cy = bounds.getCentreY();
+        const float r  = juce::jmax (bounds.getWidth(), bounds.getHeight()) * 0.75f;
+
+        juce::ColourGradient vignette (
+            juce::Colours::transparentBlack, cx, cy,
+            OneKnobColors::getColor (OneKnobColors::ColorRole::VignetteEdge), cx + r, cy,
+            true);
+        g.setGradientFill (vignette);
+        g.fillAll();
     }
-    
-    // Add some horizontal grain variation
-    for (int j = 0; j < area.getHeight(); j += 33) // Increased spacing
+
+    // 3) Amber halo behind the knob — intensity tracks Amount.
+    if (knobComponent != nullptr && currentAmount > 1.0e-3f)
     {
-        float alpha = 0.1f + (std::sin(static_cast<float>(j) * 0.05f) * 0.1f);
-        g.setColour(grainColor1.withAlpha(alpha));
-        g.drawHorizontalLine(area.getY() + j, static_cast<float>(area.getX()), static_cast<float>(area.getRight()));
+        const auto knobBounds = knobComponent->getBounds().toFloat();
+        const auto centre     = knobBounds.getCentre();
+        const float maxRadius = knobBounds.getWidth() * 0.85f;
+        const float alpha     = kHaloMaxAlpha * currentAmount;
+
+        juce::ColourGradient halo (
+            OneKnobColors::getAmber().withAlpha (alpha),     centre.x, centre.y,
+            OneKnobColors::getAmber().withAlpha (0.0f),      centre.x + maxRadius, centre.y,
+            true);
+        g.setGradientFill (halo);
+        g.fillEllipse (centre.x - maxRadius, centre.y - maxRadius,
+                       maxRadius * 2.0f, maxRadius * 2.0f);
     }
-}
 
-void OneKnobAudioProcessorEditor::drawFrameBorder(juce::Graphics& g, juce::Rectangle<int> area, int thickness)
-{
-    // Create beveled frame border effect using color palette
-    
-    // Outer highlights (top and left)
-    g.setColour(OneKnobColors::getFrameHighlight());
-    g.fillRect(0, 0, area.getWidth(), 3);
-    g.fillRect(0, 0, 3, area.getHeight());
-    
-    // Inner shadows (bottom and right)
-    g.setColour(OneKnobColors::getFrameShadow());
-    g.fillRect(0, area.getHeight() - 3, area.getWidth(), 3);
-    g.fillRect(area.getWidth() - 3, 0, 3, area.getHeight());
-    
-    // Middle frame area with gradient
-    auto frameArea = area.reduced(3);
-    juce::ColourGradient frameGradient(
-        OneKnobColors::getLightWood(), static_cast<float>(frameArea.getX()), static_cast<float>(frameArea.getY()),
-        OneKnobColors::getColor(OneKnobColors::ColorRole::WoodGrain), static_cast<float>(frameArea.getRight()), static_cast<float>(frameArea.getBottom()),
-        false);
-    
-    g.setGradientFill(frameGradient);
-    
-    // Draw frame border with thickness
-    g.fillRect(frameArea.getX(), frameArea.getY(), frameArea.getWidth(), thickness); // Top
-    g.fillRect(frameArea.getX(), frameArea.getBottom() - thickness, frameArea.getWidth(), thickness); // Bottom
-    g.fillRect(frameArea.getX(), frameArea.getY(), thickness, frameArea.getHeight()); // Left
-    g.fillRect(frameArea.getRight() - thickness, frameArea.getY(), thickness, frameArea.getHeight()); // Right
-    
-    // Inner frame highlights
-    auto innerFrame = frameArea.reduced(thickness - 4);
-    g.setColour(OneKnobColors::getColor(OneKnobColors::ColorRole::InnerFrameBorder));
-    g.drawRect(innerFrame, 1);
-}
+    // 4) Title.
+    g.setColour (OneKnobColors::getTextPrimary().withAlpha (0.85f));
+    g.setFont (OneKnobFonts::getCustomFont (12.0f, true));
+    g.drawText ("ONEKNOB",
+                juce::Rectangle<int> (0, 16, getWidth(), kTitleHeight),
+                juce::Justification::centred);
 
-void OneKnobAudioProcessorEditor::drawInnerPanel(juce::Graphics& g, juce::Rectangle<int> area)
-{
-    // Create a slightly recessed inner panel using color palette
-    juce::ColourGradient panelGradient(
-        OneKnobColors::getColor(OneKnobColors::ColorRole::PanelGradientTop), static_cast<float>(area.getCentreX()), static_cast<float>(area.getY()),
-        OneKnobColors::getColor(OneKnobColors::ColorRole::PanelGradientBottom), static_cast<float>(area.getCentreX()), static_cast<float>(area.getBottom()),
-        false);
-    
-    g.setGradientFill(panelGradient);
-    g.fillRect(area);
-    
-    // Add inner panel border
-    g.setColour(OneKnobColors::getColor(OneKnobColors::ColorRole::PanelBorder));
-    g.drawRect(area, 1);
-    
-    // Subtle inner highlight
-    g.setColour(OneKnobColors::getColor(OneKnobColors::ColorRole::PanelHighlight).withAlpha(0.5f));
-    g.drawRect(area.reduced(1), 1);
-}
-
-void OneKnobAudioProcessorEditor::drawTitle(juce::Graphics& g, juce::Rectangle<int> area, int frameThickness)
-{
-    // Draw title on the top frame using color palette and font system
-    auto titleArea = juce::Rectangle<int>(0, 3, area.getWidth(), frameThickness - 6);
-    
-    // Title text with wood carving effect
-    g.setColour(OneKnobColors::getColor(OneKnobColors::ColorRole::TitleShadow));
-    g.setFont(OneKnobFonts::getTitleFont());
-    g.drawFittedText("OneKnob", titleArea.translated(1, 1), juce::Justification::centred, 1);
-    
-    // Main title text
-    g.setColour(OneKnobColors::getTitleColor());
-    g.drawFittedText("OneKnob", titleArea, juce::Justification::centred, 1);
-    
-    // Subtle highlight on title
-    g.setColour(OneKnobColors::getColor(OneKnobColors::ColorRole::TitleHighlight).withAlpha(0.6f));
-    g.drawFittedText("OneKnob", titleArea.translated(0, -1), juce::Justification::centred, 1);
+    // 5) Thin amber accent line under the title — subtle, always present.
+    g.setColour (OneKnobColors::getAmber().withAlpha (0.35f));
+    const float lineY = 16.0f + kTitleHeight + 2.0f;
+    g.fillRect (juce::Rectangle<float> (bounds.getCentreX() - 18.0f, lineY, 36.0f, 1.0f));
 }
 
 void OneKnobAudioProcessorEditor::resized()
 {
-    // Position the gain knob component in the center of the inner panel area
     auto bounds = getLocalBounds();
-    const int frameThickness = 33;
-    auto innerArea = bounds.reduced(frameThickness);
-    
-    // Center the knob in the inner area with padding
-    int knobSize = juce::jmin(innerArea.getWidth(), innerArea.getHeight()) - 52;
-    int knobX = innerArea.getCentreX() - knobSize / 2;
-    int knobY = innerArea.getCentreY() - knobSize / 2;
-    
-    gainKnobComponent->setBounds(knobX, knobY, knobSize, knobSize);
+
+    bounds.removeFromTop (16 + kTitleHeight + 8);          // title gutter
+    auto bottom = bounds.removeFromBottom (kValueHeight + 16);
+    valueLabel.setBounds (bottom.withTrimmedBottom (10));
+
+    // Centre the knob horizontally and vertically in what remains.
+    const int knobX = (getWidth() - kKnobSize) / 2;
+    const int knobY = bounds.getY() + (bounds.getHeight() - kKnobSize) / 2;
+    knobComponent->setBounds (knobX, knobY, kKnobSize, kKnobSize);
 }

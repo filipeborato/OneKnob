@@ -1,2 +1,29 @@
+# Projucer-generated
 Builds/
 JuceLibraryCode/
+
+# CMake
+build/
+build-*/
+out/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+CMakeUserPresets.json
+cmake_install.cmake
+compile_commands.json
+.cache/
+
+# IDEs / editors
+.vscode/
+.idea/
+.vs/
+*.user
+*.swp
+*.swo
+*~
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
